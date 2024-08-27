@@ -1,0 +1,11 @@
+[package]
+name = "d3-template"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+bytemuck = { version = "1.17.0", features = ["derive"] }
+pollster = { version = "0.3.0", features = ["macro"] }
+wgpu = "22.1.0"
+winit = "0.30.5"
