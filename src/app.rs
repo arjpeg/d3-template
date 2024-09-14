@@ -1,20 +1,22 @@
-use std::sync::Arc;
+use std::{f32::consts::FRAC_PI_2, sync::Arc};
 
 use winit::{application::*, dpi::*, event::*, event_loop::*, window::*};
 
 use anyhow::Result;
 
-use crate::renderer::Renderer;
+use glam::*;
+
+use crate::{camera::Camera, renderer::Renderer};
 
 /// The load-state of the application, whether the window has been created yet or not.
 #[derive(Default, Debug)]
-pub enum AppLoadState<'a> {
+pub enum AppLoadState {
     /// The window and app have been initialized and are ready for updates.
     Loaded {
         /// The target surface for rendering.
         window: Arc<Window>,
         /// The actual application.
-        app: App<'a>,
+        app: App,
     },
     /// The window hasn't been created yet.
     #[default]
@@ -23,30 +25,44 @@ pub enum AppLoadState<'a> {
 
 /// The application state.
 #[derive(Debug)]
-pub struct App<'w> {
+pub struct App {
     /// The main renderer for the application.
-    renderer: Renderer<'w>,
+    renderer: Renderer,
+    /// The first-person camera used as the origin for rendering.
+    camera: Camera,
 }
-impl<'a> App<'a> {
-    pub fn new(window: Arc<Window>) -> Result<Self> {
-        let renderer = pollster::block_on(Renderer::new(window))?;
 
-        Ok(Self { renderer })
+impl App {
+    pub fn new(window: Arc<Window>) -> Result<Self> {
+        let camera = Camera::new(vec3(0.0, 0.0, 3.0), -FRAC_PI_2, 0.0, window.inner_size());
+        let renderer = pollster::block_on(Renderer::new(window, &camera))?;
+
+        Ok(Self { renderer, camera })
     }
 
     pub fn render(&mut self) -> Result<()> {
         self.renderer.render()
     }
 
+    pub fn update(&mut self) -> Result<()> {
+        self.renderer
+            .update_camera_buffer(self.camera.view_projection());
+
+        Ok(())
+    }
+
     fn handle_window_event(&mut self, event: WindowEvent) {
         match event {
-            WindowEvent::Resized(size) => self.renderer.resize(size),
+            WindowEvent::Resized(size) => {
+                self.renderer.resize(size);
+                self.camera.resize(size)
+            }
             _ => {}
         }
     }
 }
 
-impl<'a> ApplicationHandler for AppLoadState<'a> {
+impl ApplicationHandler for AppLoadState {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop
             .create_window(
@@ -76,6 +92,7 @@ impl<'a> ApplicationHandler for AppLoadState<'a> {
 
             WindowEvent::RedrawRequested => {
                 app.render().unwrap();
+                app.update().unwrap();
 
                 window.request_redraw();
             }

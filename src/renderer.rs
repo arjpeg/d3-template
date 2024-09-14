@@ -5,11 +5,14 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 use anyhow::Result;
 
-use crate::mesh::{Mesh, Vertex};
+use crate::{
+    camera::Camera,
+    mesh::{Mesh, Vertex},
+};
 
 /// A wgpu-backend based renderer that holds a connection to the GPU, can create buffers, and render meshes.
 #[derive(Debug)]
-pub struct Renderer<'surface> {
+pub struct Renderer {
     /// A handle to the rendering device, which in most cases will be a GPU.
     device: Device,
     /// A queue onto which messages can be passed to the `device` to be processed.
@@ -20,24 +23,31 @@ pub struct Renderer<'surface> {
     pipeline: RenderPipeline,
 
     /// The surface onto which meshes will be rendered.
-    surface: Surface<'surface>,
+    surface: Surface<'static>,
     /// The configuration of the `surface`.
     surface_config: SurfaceConfiguration,
+
+    /// The uniform buffer of the camera's view projection matrix.
+    camera_buffer: Buffer,
+    /// The bind group of the camera's uniform buffer.
+    camera_bind_group: BindGroup,
 
     /// The mesh currently being rendered.
     mesh: Mesh,
 }
 
-impl<'surface> Renderer<'surface> {
+impl Renderer {
     /// Creates a new open connection to the rendering device, and sets up a rendering pipeline.
-    pub async fn new(window: Arc<Window>) -> Result<Self> {
+    pub async fn new(window: Arc<Window>, camera: &Camera) -> Result<Self> {
+        let size = window.inner_size();
+
         let instance = Instance::new(InstanceDescriptor {
             backends: Backends::all(),
             flags: InstanceFlags::empty(),
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window.clone())?;
+        let surface = instance.create_surface(window)?;
 
         let adapter = instance
             .request_adapter(&RequestAdapterOptions {
@@ -60,10 +70,14 @@ impl<'surface> Renderer<'surface> {
             )
             .await?;
 
-        let config = Self::create_surface_config(&surface, &adapter, window.inner_size());
+        let (camera_buffer, camera_bind_group_layout, camera_bind_group) =
+            camera.create_buffer(&device);
+
+        let config = Self::create_surface_config(&surface, &adapter, size);
         surface.configure(&device, &config);
 
-        let pipeline = Self::create_render_pipeline(&device, config.format);
+        let pipeline =
+            Self::create_render_pipeline(&device, config.format, &[&camera_bind_group_layout]);
 
         let mesh = Mesh::new(
             &device,
@@ -91,6 +105,8 @@ impl<'surface> Renderer<'surface> {
             surface,
             surface_config: config,
             mesh,
+            camera_buffer,
+            camera_bind_group,
         })
     }
 
@@ -123,12 +139,16 @@ impl<'surface> Renderer<'surface> {
     }
 
     /// Creates a render pipeline using the default shaders and settings.
-    fn create_render_pipeline(device: &Device, texture_format: TextureFormat) -> RenderPipeline {
+    fn create_render_pipeline(
+        device: &Device,
+        texture_format: TextureFormat,
+        bind_group_layouts: &[&BindGroupLayout],
+    ) -> RenderPipeline {
         let shader = device.create_shader_module(include_wgsl!("../assets/shader/main.wgsl"));
 
         let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("Render Pipline Layout Descriptor"),
-            bind_group_layouts: &[],
+            bind_group_layouts,
             push_constant_ranges: &[],
         });
 
@@ -157,6 +177,15 @@ impl<'surface> Renderer<'surface> {
             multiview: None,
             cache: None,
         })
+    }
+
+    /// Updates the camera's uniform buffer with a new view-projection matrix.
+    pub fn update_camera_buffer(&mut self, view_proj: glam::Mat4) {
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0 as BufferAddress,
+            bytemuck::cast_slice(&view_proj.to_cols_array()),
+        );
     }
 
     /// Reconfigures the target `surface` to the new rendering size.
@@ -207,6 +236,8 @@ impl<'surface> Renderer<'surface> {
             });
 
             render_pass.set_pipeline(&self.pipeline);
+
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
             render_pass.set_vertex_buffer(0, self.mesh.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.mesh.index_buffer.slice(..), IndexFormat::Uint32);
