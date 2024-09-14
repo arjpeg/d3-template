@@ -1,6 +1,13 @@
-use std::{f32::consts::FRAC_PI_2, sync::Arc};
+use std::{collections::HashSet, f32::consts::FRAC_PI_2, sync::Arc, time::Instant};
 
-use winit::{application::*, dpi::*, event::*, event_loop::*, window::*};
+use winit::{
+    application::*,
+    dpi::*,
+    event::*,
+    event_loop::*,
+    keyboard::{KeyCode, PhysicalKey},
+    window::*,
+};
 
 use anyhow::Result;
 
@@ -30,6 +37,12 @@ pub struct App {
     renderer: Renderer,
     /// The first-person camera used as the origin for rendering.
     camera: Camera,
+
+    /// The time of the last frame updated, a.k.a delta tima.
+    last_frame: Instant,
+
+    /// A collection of the keys currently being held down.
+    keys_down: HashSet<KeyCode>,
 }
 
 impl App {
@@ -37,7 +50,12 @@ impl App {
         let camera = Camera::new(vec3(0.0, 0.0, 3.0), -FRAC_PI_2, 0.0, window.inner_size());
         let renderer = pollster::block_on(Renderer::new(window, &camera))?;
 
-        Ok(Self { renderer, camera })
+        Ok(Self {
+            renderer,
+            camera,
+            keys_down: HashSet::new(),
+            last_frame: Instant::now(),
+        })
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -45,6 +63,13 @@ impl App {
     }
 
     pub fn update(&mut self) -> Result<()> {
+        let now = Instant::now();
+        let dt = (now - self.last_frame).as_secs_f32();
+
+        self.last_frame = now;
+
+        self.camera.update_position(&self.keys_down, dt);
+
         self.renderer
             .update_camera_buffer(self.camera.view_projection());
 
@@ -57,6 +82,30 @@ impl App {
                 self.renderer.resize(size);
                 self.camera.resize(size)
             }
+
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key,
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                let code = match physical_key {
+                    PhysicalKey::Code(code) => code,
+                    PhysicalKey::Unidentified(other) => {
+                        eprintln!("warning: unrecognized key code, {other:?}");
+                        return;
+                    }
+                };
+
+                match state {
+                    ElementState::Pressed => self.keys_down.insert(code),
+                    ElementState::Released => self.keys_down.remove(&code),
+                };
+            }
+
             _ => {}
         }
     }

@@ -1,7 +1,10 @@
 use glam::*;
-use util::{BufferInitDescriptor, DeviceExt};
-use wgpu::*;
-use winit::dpi::PhysicalSize;
+
+use wgpu::{util::*, *};
+
+use winit::{dpi::PhysicalSize, keyboard::KeyCode};
+
+use std::collections::HashSet;
 
 /// Represents a camera in 3D space.
 #[derive(Debug, Clone)]
@@ -96,5 +99,39 @@ impl Camera {
     /// Updates the aspect ratio of the camera given a new target size.
     pub fn resize(&mut self, size: PhysicalSize<u32>) {
         self.aspect_ratio = calculate_aspect_ratio(size);
+    }
+
+    /// Moves the camera in space based on which keys are currently being held down.
+    /// Controls follow the default 'WASD' to move around the xz plane, `KeyCode::Space` to move up
+    /// and `KeyCode::Shift` to move down.
+    pub fn update_position(&mut self, keys_down: &HashSet<KeyCode>, dt: f32) {
+        let mut delta = Vec3::ZERO;
+
+        let forward = self.forward();
+        let right = forward.cross(self.up);
+
+        if keys_down.contains(&KeyCode::KeyW) {
+            delta += forward;
+        }
+
+        if keys_down.contains(&KeyCode::KeyS) {
+            delta -= forward;
+        }
+
+        if keys_down.contains(&KeyCode::KeyD) {
+            delta += right;
+        }
+        if keys_down.contains(&KeyCode::KeyA) {
+            delta -= right;
+        }
+
+        if keys_down.contains(&KeyCode::Space) {
+            delta += self.up;
+        }
+        if keys_down.contains(&KeyCode::ShiftLeft) {
+            delta -= self.up;
+        }
+
+        self.eye += 5.0 * delta.normalize_or_zero() * dt;
     }
 }
