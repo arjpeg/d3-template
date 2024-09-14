@@ -37,9 +37,16 @@ pub struct App {
     renderer: Renderer,
     /// The first-person camera used as the origin for rendering.
     camera: Camera,
+    /// The window onto which the app is rendered.
+    window: Arc<Window>,
 
-    /// The time of the last frame updated, a.k.a delta tima.
+    /// The time of the last updated frame.
     last_frame: Instant,
+    /// The time *since*, the last frame (always one frame behind).
+    delta_time: f32,
+
+    /// Represents if the cursor is currently locked onto the window.
+    has_focus: bool,
 
     /// A collection of the keys currently being held down.
     keys_down: HashSet<KeyCode>,
@@ -48,13 +55,16 @@ pub struct App {
 impl App {
     pub fn new(window: Arc<Window>) -> Result<Self> {
         let camera = Camera::new(vec3(0.0, 0.0, 3.0), -FRAC_PI_2, 0.0, window.inner_size());
-        let renderer = pollster::block_on(Renderer::new(window, &camera))?;
+        let renderer = pollster::block_on(Renderer::new(window.clone(), &camera))?;
 
         Ok(Self {
             renderer,
             camera,
+            window,
             keys_down: HashSet::new(),
             last_frame: Instant::now(),
+            delta_time: 0.0,
+            has_focus: false,
         })
     }
 
@@ -67,8 +77,11 @@ impl App {
         let dt = (now - self.last_frame).as_secs_f32();
 
         self.last_frame = now;
+        self.delta_time = dt;
 
-        self.camera.update_position(&self.keys_down, dt);
+        if self.has_focus {
+            self.camera.update_position(&self.keys_down, dt);
+        }
 
         self.renderer
             .update_camera_buffer(self.camera.view_projection());
@@ -100,13 +113,47 @@ impl App {
                     }
                 };
 
+                if code == KeyCode::Escape {
+                    self.has_focus = false;
+                    self.set_cursor_state();
+                    return;
+                }
+
                 match state {
                     ElementState::Pressed => self.keys_down.insert(code),
                     ElementState::Released => self.keys_down.remove(&code),
                 };
             }
 
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                ..
+            } => {
+                self.has_focus = true;
+                self.set_cursor_state()
+            }
+
             _ => {}
+        }
+    }
+
+    fn handle_device_event(&mut self, event: DeviceEvent) {
+        match event {
+            DeviceEvent::MouseMotion { delta } if self.has_focus => {
+                self.camera.update_rotation_angles(delta, self.delta_time)
+            }
+
+            _ => {}
+        }
+    }
+
+    fn set_cursor_state(&mut self) {
+        if self.has_focus {
+            self.window.set_cursor_grab(CursorGrabMode::Locked).unwrap();
+            self.window.set_cursor_visible(false);
+        } else {
+            self.window.set_cursor_grab(CursorGrabMode::None).unwrap();
+            self.window.set_cursor_visible(true);
         }
     }
 }
@@ -132,7 +179,9 @@ impl ApplicationHandler for AppLoadState {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let Self::Loaded { window, app } = self else { return; };
+        let Self::Loaded { window, app } = self else {
+            return;
+        };
 
         match event {
             WindowEvent::CloseRequested => {
@@ -150,5 +199,13 @@ impl ApplicationHandler for AppLoadState {
                 app.handle_window_event(event);
             }
         }
+    }
+
+    fn device_event(&mut self, _: &ActiveEventLoop, _: DeviceId, event: DeviceEvent) {
+        let Self::Loaded { app, .. } = self else {
+            return;
+        };
+
+        app.handle_device_event(event);
     }
 }

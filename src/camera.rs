@@ -1,7 +1,6 @@
 use glam::*;
 
 use wgpu::{util::*, *};
-
 use winit::{dpi::PhysicalSize, keyboard::KeyCode};
 
 use std::collections::HashSet;
@@ -30,6 +29,11 @@ fn calculate_aspect_ratio(size: PhysicalSize<u32>) -> f32 {
 }
 
 impl Camera {
+    /// The movement speed scalar of the camera.
+    pub const SPEED: f32 = 5.0;
+    /// The mouse sensitivity of the camera.
+    pub const SENSITIVITY: f32 = 0.1;
+
     pub fn new(eye: Vec3, yaw: f32, pitch: f32, size: PhysicalSize<u32>) -> Self {
         let up = Vec3::Y;
 
@@ -107,8 +111,10 @@ impl Camera {
     pub fn update_position(&mut self, keys_down: &HashSet<KeyCode>, dt: f32) {
         let mut delta = Vec3::ZERO;
 
-        let forward = self.forward();
+        let mut forward = self.forward();
         let right = forward.cross(self.up);
+
+        forward.y = 0.0;
 
         if keys_down.contains(&KeyCode::KeyW) {
             delta += forward;
@@ -132,6 +138,12 @@ impl Camera {
             delta -= self.up;
         }
 
-        self.eye += 5.0 * delta.normalize_or_zero() * dt;
+        self.eye += Self::SPEED * delta.normalize_or_zero() * dt;
+    }
+
+    /// Adjusts the camera's yaw and pitch based on mouse movements.
+    pub fn update_rotation_angles(&mut self, (dx, dy): (f64, f64), dt: f32) {
+        self.yaw += Self::SENSITIVITY * dx as f32 * dt;
+        self.pitch -= Self::SENSITIVITY * dy as f32 * dt;
     }
 }
