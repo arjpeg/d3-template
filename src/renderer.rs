@@ -33,13 +33,60 @@ pub struct Renderer {
     camera_bind_group: BindGroup,
 
     /// The mesh currently being rendered.
+    /// TODO: make more fleshed out scene system?
     mesh: Mesh,
 }
 
 impl Renderer {
     /// Creates a new open connection to the rendering device, and sets up a rendering pipeline.
     pub async fn new(window: Arc<Window>, camera: &Camera) -> Result<Self> {
-        let size = window.inner_size();
+        let (surface, surface_config, device, queue) = Self::initialize_wgpu(window).await?;
+
+        let (camera_buffer, camera_bind_group_layout, camera_bind_group) =
+            camera.create_buffer(&device);
+
+        let pipeline = Self::create_render_pipeline(
+            &device,
+            surface_config.format,
+            &[&camera_bind_group_layout],
+        );
+
+        let mesh = Mesh::new(
+            &device,
+            &[
+                Vertex {
+                    pos: [0.0, 0.5, 0.0],
+                    color: [1.0, 0.0, 0.0],
+                },
+                Vertex {
+                    pos: [-0.5, -0.5, 0.0],
+                    color: [0.0, 1.0, 0.0],
+                },
+                Vertex {
+                    pos: [0.5, -0.5, 0.0],
+                    color: [0.0, 0.0, 1.0],
+                },
+            ],
+            &[0, 1, 2],
+        );
+
+        Ok(Self {
+            device,
+            queue,
+            pipeline,
+            surface,
+            surface_config,
+            mesh,
+            camera_buffer,
+            camera_bind_group,
+        })
+    }
+
+    /// Initializes wgpu by creating a surface, and initializing the device and queue.
+    async fn initialize_wgpu(
+        window: Arc<Window>,
+    ) -> Result<(Surface<'static>, SurfaceConfiguration, Device, Queue)> {
+        let surface_size = window.inner_size();
 
         let instance = Instance::new(InstanceDescriptor {
             backends: Backends::all(),
@@ -70,44 +117,10 @@ impl Renderer {
             )
             .await?;
 
-        let (camera_buffer, camera_bind_group_layout, camera_bind_group) =
-            camera.create_buffer(&device);
-
-        let config = Self::create_surface_config(&surface, &adapter, size);
+        let config = Self::create_surface_config(&surface, &adapter, surface_size);
         surface.configure(&device, &config);
 
-        let pipeline =
-            Self::create_render_pipeline(&device, config.format, &[&camera_bind_group_layout]);
-
-        let mesh = Mesh::new(
-            &device,
-            &[
-                Vertex {
-                    pos: [0.0, 0.5, 0.0],
-                    color: [1.0, 0.0, 0.0],
-                },
-                Vertex {
-                    pos: [-0.5, -0.5, 0.0],
-                    color: [0.0, 1.0, 0.0],
-                },
-                Vertex {
-                    pos: [0.5, -0.5, 0.0],
-                    color: [0.0, 0.0, 1.0],
-                },
-            ],
-            &[0, 1, 2],
-        );
-
-        Ok(Self {
-            device,
-            queue,
-            pipeline,
-            surface,
-            surface_config: config,
-            mesh,
-            camera_buffer,
-            camera_bind_group,
-        })
+        Ok((surface, config, device, queue))
     }
 
     /// Creates a configuration for a surface given the window size.

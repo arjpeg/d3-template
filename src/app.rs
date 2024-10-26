@@ -16,7 +16,7 @@ use glam::*;
 use crate::{camera::Camera, renderer::Renderer};
 
 /// The load-state of the application, whether the window has been created yet or not.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub enum AppLoadState {
     /// The window and app have been initialized and are ready for updates.
     Loaded {
@@ -26,7 +26,6 @@ pub enum AppLoadState {
         app: App,
     },
     /// The window hasn't been created yet.
-    #[default]
     Unloaded,
 }
 
@@ -42,7 +41,7 @@ pub struct App {
 
     /// The time of the last updated frame.
     last_frame: Instant,
-    /// The time *since*, the last frame (always one frame behind).
+    /// The time since, the last frame (always one frame behind). Also known as `dt`.
     delta_time: f32,
 
     /// Represents if the cursor is currently locked onto the window.
@@ -108,7 +107,7 @@ impl App {
                 let code = match physical_key {
                     PhysicalKey::Code(code) => code,
                     PhysicalKey::Unidentified(other) => {
-                        eprintln!("warning: unrecognized key code, {other:?}");
+                        eprintln!("unrecognized key code, {other:?}");
                         return;
                     }
                 };

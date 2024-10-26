@@ -13,6 +13,6 @@ pub fn run() {
 
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    let mut app = AppLoadState::default();
+    let mut app = AppLoadState::Unloaded;
     event_loop.run_app(&mut app).unwrap();
 }
